@@ -1,0 +1,173 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  test:
+    name: Test on Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Run tests
+      run: |
+        python -m pytest tests/ -v --tb=short
+      env:
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || 'test_key_for_ci' }}
+    
+    - name: Check import syntax
+      run: |
+        python -m py_compile src/**/*.py config/**/*.py utils/**/*.py
+        echo "✓ All Python files compile successfully"
+
+  lint:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+        cache: 'pip'
+    
+    - name: Install linting dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8 black isort
+        # Optional: Add more linters as needed
+        # pip install pylint mypy
+    
+    - name: Check code formatting with Black
+      run: |
+        black --check src/ config/ utils/ tests/ || true
+        echo "Note: Black formatting check completed (non-blocking)"
+    
+    - name: Check import sorting with isort
+      run: |
+        isort --check-only src/ config/ utils/ tests/ || true
+        echo "Note: Import sorting check completed (non-blocking)"
+    
+    - name: Lint with flake8
+      run: |
+        # Stop the build if there are Python syntax errors or undefined names
+        flake8 src/ config/ utils/ tests/ --count --select=E9,F63,F7,F82 --show-source --statistics
+        # Exit-zero treats all errors as warnings
+        flake8 src/ config/ utils/ tests/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+      continue-on-error: true
+
+  security:
+    name: Security Checks
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+        cache: 'pip'
+    
+    - name: Install security scanning tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install safety bandit
+    
+    - name: Check dependencies for known security vulnerabilities
+      run: |
+        safety check --json || true
+        echo "Note: Safety check completed (non-blocking)"
+      continue-on-error: true
+    
+    - name: Run Bandit security linter
+      run: |
+        bandit -r src/ config/ utils/ -f json -o bandit-report.json || true
+        bandit -r src/ config/ utils/ -ll
+      continue-on-error: true
+
+  build-check:
+    name: Build Verification
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Verify CLI can be imported
+      run: |
+        python -c "from src.cli import cli; print('✓ CLI imports successfully')"
+        python -c "from src.agent import SysMLAgent; print('✓ Agent imports successfully')"
+        python -c "from src.file_manager import FileManager; print('✓ FileManager imports successfully')"
+        python -c "from src.rag_handler import RAGHandler; print('✓ RAGHandler imports successfully')"
+        python -c "from config.settings import get_settings; print('✓ Settings imports successfully')"
+        echo "✓ All core modules import successfully"
+
+  # Optional: Add a job to build and publish to PyPI or create releases
+  # release:
+  #   name: Build and Release
+  #   runs-on: ubuntu-latest
+  #   needs: [test, lint, security, build-check]
+  #   if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+  #   
+  #   steps:
+  #   - name: Checkout code
+  #     uses: actions/checkout@v4
+  #   
+  #   - name: Set up Python
+  #     uses: actions/setup-python@v5
+  #     with:
+  #       python-version: "3.11"
+  #   
+  #   - name: Install build dependencies
+  #     run: |
+  #       python -m pip install --upgrade pip
+  #       pip install build twine
+  #   
+  #   - name: Build package
+  #     run: python -m build
+  #   
+  #   - name: Publish to PyPI (if configured)
+  #     env:
+  #       TWINE_USERNAME: __token__
+  #       TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+  #     run: |
+  #       # Uncomment when ready to publish
+  #       # twine upload dist/*
+
