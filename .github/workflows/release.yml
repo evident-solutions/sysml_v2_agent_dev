@@ -56,7 +56,7 @@ jobs:
           src/ config/ utils/ tests/ requirements.txt README.md SETUP.md .gitignore
     
     - name: Upload release artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: release-artifacts
         path: |
